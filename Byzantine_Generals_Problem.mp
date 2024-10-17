@@ -5,7 +5,7 @@ Created by:
 John Phillips in November 2023
 
 Edited by:
-John Phillips in November 2023
+John Phillips in October 2024
 
 Purpose:
 
@@ -16,200 +16,156 @@ Description:
 Assumptions:
 1. The order is attack. 
 2. All messages sent are received. 
-3. All messages are not tamperable (changed in transit). 
-4. Once a traitor, always a traitor. 
-
+3. All messages cannot be changed in transit. 
 
 Instructions:
 
-Trace Count: 48 traces at Scope 2 
-Elapsed time: 1.17 sec
+Trace Count: 128 traces at Scope 1, 7 Generals, 1-7 Traitor
+Elapsed time: 70.58 sec
 
 TODOs: 
-1. Need to figure out how to make a traitor stay a traitor.  
-      
-
-
+1. Implement tie breaker. I think this is present but need to confirm. 
+2. Figure out how to find and remove mirror outcomes to speed up trace generation. 
+3. Explore code for ways to speed up trace generation. 
 -------------------------------------------------------------------------------*/ 
 
 SCHEMA Byzantine_Generals_Problem
 
 /* Placeholder variables to hold trace information. */
-ATTRIBUTES { number a, b, c, d, e; };
+ATTRIBUTES { number a, b, c, d, e, f; };
 
-ATTRIBUTES { number Generals, General_ID, Round, Rounds, Traitor, Traitors; };
+ATTRIBUTES { number count, Generals, General_ID, Majority, Order, Orders, Traitor, Traitors; };
 
-Generals := 3;
+/* 1 = Attack
+   0 = Retreat */
+Orders := 1;
 
-Traitors := 1;
+Generals := 7; 
+Traitors := 4;
 
-Rounds :=  ( Traitors + 1 ) * Generals;
+Majority := Generals / 2 + 0.5;
 
 /* Used to track trace versions over time. */
-SAY ( "Version 20231113" );
+SAY ( "Version 2024-10-16" );
 
 /* Mark each trace with the trace number. */
 SAY ( "Trace " trace_id );
 
 ROOT Army: 
-	{+ {[General], General} +}
+	{+<7..7> General +}
 
 BUILD {
 	General_ID := 1;
-        
+
 	COORDINATE  $a: General
-		DO $a.General_ID := General_ID; General_ID +:= 1; OD;   
+		DO 
+			$a.General_ID := General_ID; 
+			General_ID +:= 1; 
+		OD;   
 }
 ;
 
 	General:
-		(+ 
+		( 
         	( Attack | Retreat )
-            Send_Messages
-            Receive_Messages
-		+)
-
-	BUILD {
-                 
-     	/* Set the round value for iteration. */
-        Round := 1;
-        
-        COORDINATE	$a: ( Attack | Retreat ),
-        			$b: Send_Messages,
-        			$c: Receive_Messages
-        	DO $a.Round := Round; 
-        	   $b.Round := Round; 
-        	   $c.Round := Round; Round +:= 1; OD;
-
-        /* Once a traitor, always a traitor. */
-      
-        COORDINATE	$a: ( Retreat )
-        	DO IF $a.Round == 1 THEN ENSURE #Attack == 0; FI; OD;
-        
-    }
+            Exchange_Messengers
+        ( _Attack | _Retreat )
+		)		
 	;
 
-/* Set the number of Generals. */
-ENSURE #General == Generals;
+/* Set the Order and find the Traitor(s) based on the Orders. */
+count := 0;
 
-/* Set the number of rounds. */
-ENSURE #Send_Messages == Rounds;
-
-/* Check that the first round initial conditions (number of 
-   traitors is met. */
 COORDINATE	$a: General
 	DO COORDINATE $b: ( Attack | Retreat ) FROM $a
-		DO IF ( $b.Round == 1 ) THEN
-			IF $b IS Retreat THEN $a.Traitor := 1; a := 1; 			
-			ELSE a := 0; FI; 			
-			b +:= a;
+		DO IF $b IS Attack THEN 
+			$a.Order := 1; 
+			IF Orders == 0 THEN
+				$a.Traitor := 1; count +:= 1;
+				/*ADD SAY("Traitor") PRECEDES $a;*/
+			FI; 
 		   FI;
-		OD;
+		   
+		   IF $b IS Retreat THEN
+		   	$a.Order := 0;
+			IF Orders == 1 THEN
+				$a.Traitor := 1; count +:= 1;
+				/*ADD SAY("Traitor") PRECEDES $a;*/
+			FI; 		   	
+		 FI; OD;
 	OD;
 
-/* Set the number of Traitors. */
-IF b > Traitors THEN REJECT; FI;
+/* Set the max number of Traitors. */
+/*IF count != Traitors THEN REJECT; FI;*/
 
-/* Remove traces without a Traitor. */
-IF b == 0 THEN REJECT; FI;
+count := 0;
 
 GRAPH messages { };
 
 WITHIN messages {
-	COORDINATE  $a: General
-    	DO COORDINATE  $b: ( Attack | Retreat ) FROM $a,
-                       $c: Send_Messages FROM $a
-    
-			DO COORDINATE  $d: General
-    			DO COORDINATE $e: Receive_Messages FROM $d
-					DO
-    	    			IF NOT $b IN $d THEN 
-							IF $b IS Attack THEN a := 1; ELSE a := 0; FI;
-    						IF ( $c.Round == $e.Round ) THEN 
-    	
-								ADD $c Message $e;
-    
-    							IF $c.Round == 1 THEN
-									/* What happened. */
-    								Node$x: NEW ( $c.Round );    
-    								Node$x.a := ( $d.General_ID );
-									Node$x.b := ( $a.General_ID );
-    								Node$x.c := ( a );
-    								Node$x.d := ( 0 );
-    								/* What they said happened. */
-    								Node$y: NEW ( $c.Round );
-    								Node$y.a := ( $d.General_ID );
-									Node$y.b := ( $a.General_ID );
-    								IF $d.Traitor == 1 THEN
-    									Node$y.c := ( 0 );
-    								ELSE
-    									Node$y.c := ( a );    							
-    								FI;
-    								Node$y.d := ( 1 );
-    							FI;
-    						FI;
-						FI;
-					OD;
-    			OD;
-			OD;      
-    	OD;
+	COORDINATE  $a: General		
+		DO COORDINATE $b: General
+		   	DO 		
+    				/* What they said happened. */
+    				Node$y: NEW ( "Node" );
+    				Node$y.a := ( $a.General_ID );
+				Node$y.b := ( $b.General_ID );
+    				IF $a.Traitor == 1 THEN
+ 					IF Orders == 1 THEN Node$y.c := 0; FI;
+ 					IF Orders == 0 THEN Node$y.c := 1; FI;
+	
+    				ELSE
+    					Node$y.c := ( $b.Order );    							
+    				FI;	
+    				/* Keep track of the number of "Attack" orders. */
+    				count +:= Node$y.c;										  										
+    			OD;	
+    			/*ADD SAY(count "|" Majority) PRECEDES $a;*/
+    			count := 0;		
+		OD;  
 }
 ;
 
-TABLE direct_messages {
-	TITLE ("Trace " trace_id " Direct");
-	TABS 	string R, 
-    		number G,
-			number M,
-    		number O;
-}
-;
+count := 0;
 
-WITHIN messages {
-    FOR Node$n
-    	DO
-		IF Node$n.d == 0 THEN
-    		
-			direct_messages <|
-				R:		SAY(Node$n), 
-    			G:		Node$n.a,
-				M: 		Node$n.b,
-    			O:		Node$n.c;
-		FI;
-    	OD;
+COORDINATE	$a: General
+	DO count +:= $a.Order; OD;
 
-}
-;
+IF ( count >= Majority ) THEN 
+	IF #_Retreat > 0 THEN 
+	CLEAR messages;
+	REJECT; 
+	FI;
+FI;
+IF ( count < Majority ) THEN  
+	IF #_Attack > 0 THEN 
+	CLEAR messages;
+	REJECT; 
+	FI; 
+FI;
 
+/* General G received a message from General M with order O. */
 TABLE relayed_messages {
-	TITLE ("Trace " trace_id " Relayed");
-	TABS 	string R, 
-    		number G,
+	TITLE ("Trace " trace_id " Message Results");
+	TABS 	number G,
 			number M,
-    		number O;
+    			number O;
 }
 ;
 
 WITHIN messages {
     FOR Node$n
-    	DO
-		IF Node$n.d == 1 THEN
-    		
-			relayed_messages <|
-				R:		SAY(Node$n), 
+    	DO   		
+		relayed_messages <|
     			G:		Node$n.a,
-				M: 		Node$n.b,
+			M: 		Node$n.b,
     			O:		Node$n.c;
-		FI;
     	OD;
 
 }
 ;
 
-
-SHOW direct_messages SORT;
-SHOW relayed_messages SORT;
+SHOW relayed_messages;
 
 CLEAR messages;
-CLEAR direct_messages;
 CLEAR relayed_messages;
