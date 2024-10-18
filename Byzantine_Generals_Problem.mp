@@ -14,7 +14,7 @@ Description:
 
    
 Assumptions:
-1. The order is attack. 
+1. The Commander is loyal. 
 2. All messages sent are received. 
 3. All messages cannot be changed in transit. 
 
@@ -34,82 +34,94 @@ SCHEMA Byzantine_Generals_Problem
 /* Placeholder variables to hold trace information. */
 ATTRIBUTES { number a, b, c, d, e, f; };
 
-ATTRIBUTES { number count, Generals, General_ID, Majority, Order, Orders, Traitor, Traitors; };
+ATTRIBUTES { number count, Lieutenants, Lieutenant_ID, Majority, node, Order, Orders, Traitor, Traitors; };
 
 /* 1 = Attack
    0 = Retreat */
 Orders := 1;
 
-Generals := 7; 
-Traitors := 4;
+Lieutenants := 3; 
+Traitors := 1;
 
-Majority := Generals / 2 + 0.5;
+Majority := Lieutenants / 2 + 0.5;
 
 /* Used to track trace versions over time. */
-SAY ( "Version 2024-10-16" );
+SAY ( "Version 2024-10-17" );
 
 /* Mark each trace with the trace number. */
 SAY ( "Trace " trace_id );
 
-ROOT Army: 
-	{+<7..7> General +}
+ROOT Commander: 
+	( Order_Attack | Order_Retreat )
+	{+<3..3> Lieutenant +}
 
 BUILD {
-	General_ID := 1;
+	
+	Lieutenant_ID := 1;
 
-	COORDINATE  $a: General
+	COORDINATE  $a: Lieutenant
 		DO 
-			$a.General_ID := General_ID; 
-			General_ID +:= 1; 
+			$a.Lieutenant_ID := Lieutenant_ID; 
+			Lieutenant_ID +:= 1; 
 		OD;   
 }
 ;
 
-	General:
+	Lieutenant:
 		( 
-        	( Attack | Retreat )
+        	( Attack_Ordered | Retreat_Ordered )
             Exchange_Messengers
         ( _Attack | _Retreat )
 		)		
 	;
+	
+
+COORDINATE	$a:	Commander
+	DO
+		IF Orders == 1 THEN ENSURE #Order_Attack == 1;
+		ELSE ENSURE #Order_Retreat == 1; FI;
+	OD;
 
 /* Set the Order and find the Traitor(s) based on the Orders. */
 count := 0;
 
-COORDINATE	$a: General
-	DO COORDINATE $b: ( Attack | Retreat ) FROM $a
-		DO IF $b IS Attack THEN 
+COORDINATE	$a: Lieutenant
+	DO COORDINATE $b: ( Attack_Ordered | Retreat_Ordered ) FROM $a
+		DO IF $b IS Attack_Ordered THEN 
 			$a.Order := 1; 
 			IF Orders == 0 THEN
 				$a.Traitor := 1; count +:= 1;
-				/*ADD SAY("Traitor") PRECEDES $a;*/
+				ADD SAY("Traitor") PRECEDES $a;
 			FI; 
 		   FI;
 		   
-		   IF $b IS Retreat THEN
+		   IF $b IS Retreat_Ordered THEN
 		   	$a.Order := 0;
 			IF Orders == 1 THEN
 				$a.Traitor := 1; count +:= 1;
-				/*ADD SAY("Traitor") PRECEDES $a;*/
+				ADD SAY("Traitor") PRECEDES $a;
 			FI; 		   	
 		 FI; OD;
 	OD;
 
-/* Set the max number of Traitors. */
+/* Set the number of Traitors. */
 /*IF count != Traitors THEN REJECT; FI;*/
 
-count := 0;
+/* Set the maximum number of Traitors. */
+/*IF count > Traitors THEN REJECT; FI;*/
 
+count := 0;
+node := 0; 
 GRAPH messages { };
 
 WITHIN messages {
-	COORDINATE  $a: General		
-		DO COORDINATE $b: General
+	COORDINATE  $a: Lieutenant		
+		DO COORDINATE $b: Lieutenant
 		   	DO 		
     				/* What they said happened. */
-    				Node$y: NEW ( "Node" );
-    				Node$y.a := ( $a.General_ID );
-				Node$y.b := ( $b.General_ID );
+    				Node$y: NEW ( node );
+    				Node$y.a := ( $a.Lieutenant_ID );
+				Node$y.b := ( $b.Lieutenant_ID );
     				IF $a.Traitor == 1 THEN
  					IF Orders == 1 THEN Node$y.c := 0; FI;
  					IF Orders == 0 THEN Node$y.c := 1; FI;
@@ -121,51 +133,66 @@ WITHIN messages {
     				count +:= Node$y.c;										  										
     			OD;	
     			/*ADD SAY(count "|" Majority) PRECEDES $a;*/
-    			count := 0;		
+    			count := 0;	
+    			node +:= 1;	
 		OD;  
 }
 ;
 
 count := 0;
 
-COORDINATE	$a: General
+COORDINATE	$a: Lieutenant
 	DO count +:= $a.Order; OD;
 
+/* In the event of a tie, the default is "Retreat".*/
 IF ( count >= Majority ) THEN 
 	IF #_Retreat > 0 THEN 
 	CLEAR messages;
 	REJECT; 
 	FI;
 FI;
+
 IF ( count < Majority ) THEN  
 	IF #_Attack > 0 THEN 
 	CLEAR messages;
 	REJECT; 
 	FI; 
 FI;
+/*
+COORDINATE $a: Lieutenant
+	DO COORDINATE $b: ( _Attack | _Retreat ) FROM $a
+		DO COORDINATE $c: Lieutenant
+			DO COORDINATE $d: ( _Attack | _Retreat ) FROM $c
+				DO
+					SHARE $b $d;
+				OD;
+			OD;
+		OD;
+	OD;
+*/		
 
-/* General G received a message from General M with order O. */
-TABLE relayed_messages {
-	TITLE ("Trace " trace_id " Message Results");
-	TABS 	number G,
-			number M,
-    			number O;
+/* Lieutenant G received a message from Lieutenant M with order O. */
+TABLE message_table {
+	TITLE ("Trace " trace_id " Message Table");
+	TABS 	number Lieutenant,
+			number was_told_by_Lieutenant,
+    			number that_the_order_was;
 }
 ;
 
 WITHIN messages {
     FOR Node$n
     	DO   		
-		relayed_messages <|
-    			G:		Node$n.a,
-			M: 		Node$n.b,
-    			O:		Node$n.c;
+		message_table <|
+    			Lieutenant:					Node$n.a,
+			was_told_by_Lieutenant: 		Node$n.b,
+    			that_the_order_was:			Node$n.c;
     	OD;
 
 }
 ;
 
-SHOW relayed_messages;
+SHOW message_table;
 
 CLEAR messages;
-CLEAR relayed_messages;
+CLEAR message_table;
