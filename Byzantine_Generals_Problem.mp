@@ -71,7 +71,7 @@ BUILD {
 		( 
         	( Attack_Ordered | Retreat_Ordered )
             Exchange_Messengers
-        ( _Attack | _Retreat )
+        ( Attack | Retreat )
 		)		
 	;
 	
@@ -91,7 +91,7 @@ COORDINATE	$a: Lieutenant
 			$a.Order := 1; 
 			IF Orders == 0 THEN
 				$a.Traitor := 1; count +:= 1;
-				ADD SAY("Traitor") PRECEDES $a;
+				/*ADD SAY("Traitor") PRECEDES $a;*/
 			FI; 
 		   FI;
 		   
@@ -99,7 +99,7 @@ COORDINATE	$a: Lieutenant
 		   	$a.Order := 0;
 			IF Orders == 1 THEN
 				$a.Traitor := 1; count +:= 1;
-				ADD SAY("Traitor") PRECEDES $a;
+				/*ADD SAY("Traitor") PRECEDES $a;*/
 			FI; 		   	
 		 FI; OD;
 	OD;
@@ -146,30 +146,40 @@ COORDINATE	$a: Lieutenant
 
 /* In the event of a tie, the default is "Retreat".*/
 IF ( count >= Majority ) THEN 
-	IF #_Retreat > 0 THEN 
+	IF #Retreat > 0 THEN 
 	CLEAR messages;
 	REJECT; 
 	FI;
 FI;
 
 IF ( count < Majority ) THEN  
-	IF #_Attack > 0 THEN 
+	IF #Attack > 0 THEN 
 	CLEAR messages;
 	REJECT; 
 	FI; 
 FI;
-/*
+
 COORDINATE $a: Lieutenant
-	DO COORDINATE $b: ( _Attack | _Retreat ) FROM $a
+	DO COORDINATE $b: ( Attack ) FROM $a
 		DO COORDINATE $c: Lieutenant
-			DO COORDINATE $d: ( _Attack | _Retreat ) FROM $c
+			DO COORDINATE $d: ( Attack ) FROM $c
 				DO
-					SHARE $b $d;
+					SHARE $b $d; 
 				OD;
 			OD;
 		OD;
-	OD;
-*/		
+	OD;	
+	
+COORDINATE $a: Lieutenant
+	DO COORDINATE $b: ( Retreat ) FROM $a
+		DO COORDINATE $c: Lieutenant
+			DO COORDINATE $d: ( Retreat ) FROM $c
+				DO
+					SHARE $b $d; 
+				OD;
+			OD;
+		OD;
+	OD;	
 
 /* Lieutenant G received a message from Lieutenant M with order O. */
 TABLE message_table {
